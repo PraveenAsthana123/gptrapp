@@ -1,0 +1,68 @@
+name: Build and Push to GKE verba backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  continuous-integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:      
+      - uses: actions/checkout@v3
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/123123123/locations/global/workloadIdentityPools/the-workload-pool/providers/the-provider
+          service_account: only-storage-object-adm@<PROJECT_ID>.iam.gserviceaccount.com
+      - uses: RafikFarhad/push-to-gcr-github-action@v5-rc1
+        with:
+          # gcloud_service_key: ${{ secrets.GCLOUD_SERVICE_KEY }} # can be base64 encoded or plain text || not needed if you use google-github-actions/auth
+          registry: gcr.io #same no change
+          project_id: my-awesome-project 
+          image_name: gpt_backend
+          image_tag: latest,v1
+          dockerfile: Dockerfile
+          context: ./docker
+  
+  continuous_deployment:
+    name: continuous delivery to GKE cluster
+    runs-on: ubuntu-latest
+    needs: continuous-integration
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCLOUD_SERVICE_KEY }}'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - id: 'get-credentials'
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'cluster-1'
+          location: 'us-central1-c'
+
+      - name: "install kubernetes"
+        run: |
+          curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          pwd
+
+      - name: Deploy
+        run: |
+          sed 's|hyd\.ocir\.io\.docker|hyd.ocir.io/axbnvq6zalfd/pdfchatregistry/verba_backend:${{ github.sha }} |g' k8s/pdfchat-worker.yml > k8s/pdfchat-worker-temp.yml
+          rm -rf k8s/verba-worker.yml
+          mv k8s/verba-worker-temp.yml k8s/verba-worker.yml
+          kubectl apply -f k8s -n verba-backend
+          kubectl get pods -n verba-backend

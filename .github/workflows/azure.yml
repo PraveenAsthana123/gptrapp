@@ -1,0 +1,69 @@
+name: Build and Push to AKS ingestion gpt app
+
+on:
+  push:
+    branches:
+      - main
+
+
+env:
+  AZURE_CONTAINER_REGISTRY: gptcregistry
+  PROJECT_NAME: gptapp
+  RESOURCE_GROUP: azure-training
+  REGISTRY_URL: gptcregistry.azurecr.io
+  CLUSTER_NAME: test
+
+
+jobs:
+    continuous-integration:
+        runs-on: ubuntu-latest
+        steps:
+        - name: 'Checkout GitHub Action'
+          uses: actions/checkout@main
+
+        - name: 'Login via Azure CLI'
+          uses: azure/login@v1
+          with:
+            creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+        - name: AZURE DOCKER LOGIN && PUSH TO REGISTRY
+          run: |
+              sudo docker login ${{ env.REGISTRY_URL }} --username ${{ env.AZURE_CONTAINER_REGISTRY }} --password ${{ secrets.REGISTRY_PASSWORD_PROD }}
+              sudo docker build -t ${{ env.REGISTRY_URL }}/${{ env.PROJECT_NAME }}:latest .
+              sudo docker tag ${{ env.REGISTRY_URL }}/${{ env.PROJECT_NAME }}:latest ${{ env.REGISTRY_URL }}/${{ env.PROJECT_NAME }}:${{ github.sha }}
+              sudo docker push ${{ env.REGISTRY_URL }}/${{ env.PROJECT_NAME }}:${{ github.sha }}
+
+
+    continuous-deployment:
+      needs: continuous-integration
+      runs-on: ubuntu-latest
+      steps:
+        - name: 'Checkout GitHub Action'
+          uses: actions/checkout@v4
+        
+        - name: Azure login
+          id: login
+          uses: azure/login@v1.4.3
+          with:
+            creds: ${{ secrets.AZURE_CREDENTIALS }}  
+
+        - name: Set AKS context
+          id: set-context
+          uses: azure/aks-set-context@v3
+          with:
+            resource-group: '${{ env.RESOURCE_GROUP }}' 
+            cluster-name: '${{ env.CLUSTER_NAME }}'
+
+        - name: Setup kubectl
+          id: install-kubectl
+          uses: azure/setup-kubectl@v3
+
+        - name: Deploy to AKS
+          id: deploy-aks
+          uses: Azure/k8s-deploy@v4
+          with:
+            namespace: 'ml-backend'
+            manifests: |
+              ./.kube/segmentation-backend-prod.yml
+            images: ${{ env.REGISTRY_URL }}/${{ env.PROJECT_NAME }}:${{ github.sha }}
+            pull-images: false
