@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: gptapp-server
-          image: gptapp.azurecr.io/pdfchat_backend/pdfchat_backend:kube4
+          image: gptcregistry.azurecr.io/gptapp
           imagePullPolicy: Always
           command: 
             - "bash"

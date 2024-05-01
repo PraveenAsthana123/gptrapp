@@ -64,6 +64,6 @@ jobs:
           with:
             namespace: 'ml-backend'
             manifests: |
-              ./.kube/segmentation-backend-prod.yml
+              ./k8s/app-deployment.yml
             images: ${{ env.REGISTRY_URL }}/${{ env.PROJECT_NAME }}:${{ github.sha }}
             pull-images: false
